@@ -11,7 +11,7 @@
 // We use HTTP POST requests with CSRF Tokens to protect against CSRF attacks.
 
 import { useState, useEffect, useContext, createContext, createElement } from 'react'
-import logger from '../lib/logger'
+import _logger, { proxyLogger } from '../lib/logger'
 import parseUrl from '../lib/parse-url'
 
 // This behaviour mirrors the default behaviour for getting the site name that
@@ -36,6 +36,8 @@ const __NEXTAUTH = {
   // Used to store to function export by getSession() hook
   _getSession: () => {}
 }
+
+const logger = proxyLogger(_logger, __NEXTAUTH.basePath)
 
 // Add event listners on load
 if (typeof window !== 'undefined') {
@@ -114,12 +116,10 @@ const setOptions = ({
 }
 
 // Universal method (client + server)
-export const getSession = async ({ req, ctx, triggerEvent = true } = {}) => {
-  // If passed 'appContext' via getInitialProps() in _app.js then get the req
-  // object from ctx and use that for the req value to allow getSession() to
-  // work seemlessly in getInitialProps() on server side pages *and* in _app.js.
-  if (!req && ctx && ctx.req) { req = ctx.req }
-
+// If passed 'appContext' via getInitialProps() in _app.js then get the req
+// object from ctx and use that for the req value to allow getSession() to
+// work seemlessly in getInitialProps() on server side pages *and* in _app.js.
+export async function getSession ({ ctx, req = ctx?.req, triggerEvent = true } = {}) {
   const baseUrl = _apiBaseUrl()
   const fetchOptions = req ? { headers: { cookie: req.headers.cookie } } : {}
   const session = await _fetchData(`${baseUrl}/session`, fetchOptions)
@@ -130,12 +130,10 @@ export const getSession = async ({ req, ctx, triggerEvent = true } = {}) => {
 }
 
 // Universal method (client + server)
-const getCsrfToken = async ({ req, ctx } = {}) => {
-  // If passed 'appContext' via getInitialProps() in _app.js then get the req
-  // object from ctx and use that for the req value to allow getCsrfToken() to
-  // work seemlessly in getInitialProps() on server side pages *and* in _app.js.
-  if (!req && ctx && ctx.req) { req = ctx.req }
-
+// If passed 'appContext' via getInitialProps() in _app.js then get the req
+// object from ctx and use that for the req value to allow getCsrfToken() to
+// work seemlessly in getInitialProps() on server side pages *and* in _app.js.
+async function getCsrfToken ({ ctx, req = ctx?.req } = {}) {
   const baseUrl = _apiBaseUrl()
   const fetchOptions = req ? { headers: { cookie: req.headers.cookie } } : {}
   const data = await _fetchData(`${baseUrl}/csrf`, fetchOptions)
@@ -282,15 +280,25 @@ export async function signIn (provider, options = {}, authorizationParams = {}) 
   const res = await fetch(_signInUrl, fetchOptions)
   const data = await res.json()
   if (redirect || !isCredentials) {
-    window.location = data.url ?? callbackUrl
+    const url = data.url ?? callbackUrl
+    window.location = url
+    // If url contains a hash, the browser does not reload the page. We reload manually
+    if (url.includes('#')) window.location.reload()
+
     return
   }
 
   const error = new URL(data.url).searchParams.get('error')
+
+  if (res.ok) {
+    await __NEXTAUTH._getSession({ event: 'storage' })
+  }
+
   return {
     error,
     status: res.status,
-    ok: res.ok
+    ok: res.ok,
+    url: error ? null : data.url
   }
 }
 
@@ -322,9 +330,14 @@ export async function signOut (options = {}) {
   const data = await res.json()
   _sendMessage({ event: 'session', data: { trigger: 'signout' } })
   if (redirect) {
-    window.location = data.url ?? callbackUrl
+    const url = data.url ?? callbackUrl
+    window.location = url
+    // If url contains a hash, the browser does not reload the page. We reload manually
+    if (url.includes('#')) window.location.reload()
     return
   }
+
+  await __NEXTAUTH._getSession({ event: 'storage' })
 
   return data
 }

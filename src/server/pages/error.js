@@ -1,8 +1,17 @@
+// @ts-check
 import { h } from 'preact' // eslint-disable-line no-unused-vars
 import render from 'preact-render-to-string'
 
-/** Renders an error page. */
-export default function error ({ baseUrl, basePath, error, res }) {
+/**
+ * Renders an error page.
+ * @param {{
+ *   baseUrl: string
+ *   basePath: string
+ *   error?: string
+ *   res: import("..").NextAuthResponse
+ * }} params
+ */
+export default function error ({ baseUrl, basePath, error = 'default', res }) {
   const signinPageUrl = `${baseUrl}${basePath}/signin`
 
   const errors = {
@@ -37,14 +46,14 @@ export default function error ({ baseUrl, basePath, error, res }) {
       message: (
         <div>
           <p>The sign in link is no longer valid.</p>
-          <p>It may have be used already or it may have expired.</p>
+          <p>It may have been used already or it may have expired.</p>
         </div>
       ),
       signin: <p><a className='button' href={signinPageUrl}>Sign in</a></p>
     }
   }
 
-  const { statusCode, heading, message, signin } = errors[error.toLowerCase()] || errors.default
+  const { statusCode, heading, message, signin } = errors[error.toLowerCase()]
 
   res.status(statusCode)
 
